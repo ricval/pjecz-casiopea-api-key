@@ -3,10 +3,12 @@
 Todos los cambios notables en este proyecto serán documentados en este archivo.
 El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
-## [1.5.0] - 2026-07-02 (Trabajando)
+## [1.5.0] - Sin Publicar
 
 ### ✨ Mejoras
 
+- Añadir validación de hora al momento de `confirmar_cita`. Si es menor a 15 minutos antes de la hora pactada, mandar mensaje de advertencia. También si es mayor a 15 minutos.
+- Documentación `README.md` actualizada.
 - Añadido parámetro opcional en _endpoint_ `confirmar_cita` para evitar validar la fecha y hora de la cita.
 - Incluir los campos `unidad_id`, `codigo_acceso_id` y `turno_id` en la respuesta del _endpoint_ `confirmar_cita`.
 - Se mejoró el código de barras, ahora se utiliza el primer dígito como personalizado para definir la aplicación _backend_ que lo crea y a la cual debe comunicarse el _frontend_ cuando lo lea.
