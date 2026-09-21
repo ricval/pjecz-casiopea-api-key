@@ -62,3 +62,6 @@ exclude = ["**/tests"]
 [tool.ruff]
 ignore = ["F821"]
 line-length = 128
+
+[tool.pylint.format]
+max-line-length = 150

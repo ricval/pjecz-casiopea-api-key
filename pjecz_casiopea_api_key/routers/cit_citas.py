@@ -100,6 +100,7 @@ async def crear(
     database: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
     cit_cita_in: CitCitaIn,
+    sin_validar_fecha: bool = False,
 ):
     """Crear una cita"""
     if current_user.permissions.get("CIT CITAS", 0) < Permiso.CREAR:
@@ -146,13 +147,14 @@ async def crear(
     except NoResultFound:
         return OneCitCitaOut(success=False, message="No se puede agendar el servicio en la oficina")
 
-    # Validar que la fecha sea un día disponible
-    if cit_cita_in.fecha not in listar_dias_disponibles(database, settings):
-        return OneCitCitaOut(success=False, message="No es válida la fecha")
+    if not sin_validar_fecha:
+        # Validar que la fecha sea un día disponible
+        if cit_cita_in.fecha not in listar_dias_disponibles(database, settings):
+            return OneCitCitaOut(success=False, message="No es válida la fecha")
 
-    # Validar la hora_minuto, respecto a las horas disponibles
-    if cit_cita_in.hora_minuto not in listar_horas_disponibles(database, cit_servicio, oficina, cit_cita_in.fecha):
-        return OneCitCitaOut(success=False, message="No es valida la hora-minuto porque no esta disponible")
+        # Validar la hora_minuto, respecto a las horas disponibles
+        if cit_cita_in.hora_minuto not in listar_horas_disponibles(database, cit_servicio, oficina, cit_cita_in.fecha):
+            return OneCitCitaOut(success=False, message="No es valida la hora-minuto porque no esta disponible")
 
     # Definir el inicio de la cita
     inicio_dt = datetime(
@@ -544,8 +546,11 @@ async def confirmar_cita(
     database: Annotated[Session, Depends(get_db)],
     cit_cita_codigo_barras: str,
     sin_validar_fecha: bool = False,
+    sin_crear_turno: bool = False,
 ):
     """Detalle de una cita a partir de su código de barras"""
+    margen_cita_minutos = 15
+
     if current_user.permissions.get("CIT CITAS", 0) < Permiso.VER:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     cit_cita = database.query(CitCita).filter_by(codigo_barras=cit_cita_codigo_barras).first()
@@ -556,18 +561,23 @@ async def confirmar_cita(
     if not sin_validar_fecha:
         if cit_cita.inicio.date() != datetime.today().date():
             return OneCitCitaConfirmadaOut(success=False, message="ADVERTENCIA: Esta cita no es para el día de hoy.")
+        if cit_cita.inicio - timedelta(minutes=margen_cita_minutos) > datetime.now():
+            return OneCitCitaConfirmadaOut(success=False, message=f"ADVERTENCIA: Su cita aún no inicia. Puede ingresar {margen_cita_minutos} minutos antes de la hora de inicio.")
+        if cit_cita.inicio + timedelta(minutes=margen_cita_minutos) < datetime.now():
+            return OneCitCitaConfirmadaOut(success=False, message="ADVERTENCIA: Su hora ya superó el tiempo permitido.")
     if cit_cita.oficina.turnos_unidad_id is None:
         return OneCitCitaConfirmadaOut(success=False, message="ERROR: La oficina no tiene una unidad de turnos asignada.")
-    if cit_cita.estado != "PENDIENTE" and cit_cita.estado != "ASISTIO":
+    if cit_cita.estado not in ("PENDIENTE", "ASISTIO"):
         return OneCitCitaConfirmadaOut(success=False, message="ADVERTENCIA: Esta cita no está en un estado PENDIENTE")
     
     # Solo si está en estado PENDIENTE crea el turno y marca la asistencia,
     # de lo contrario, solo regresa los datos ya procesados del turno.
     if cit_cita.estado == "PENDIENTE":
-        # Crear Turno
-        resultado, mensaje = _crear_turno(cit_cita, database)
-        if resultado == False:
-            return OneCitCitaConfirmadaOut(success=False, message=f"Error en el sistema de turnos: {mensaje}")
+        if not sin_crear_turno:
+            # Crear Turno
+            resultado, mensaje = _crear_turno(cit_cita, database)
+            if resultado == False:
+                return OneCitCitaConfirmadaOut(success=False, message=f"Error en el sistema de turnos: {mensaje}")
 
         # Añadir asistencia
         cit_cita.asistencia = True
